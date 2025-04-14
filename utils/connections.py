@@ -5,9 +5,10 @@ class OSRS_DB():
     '''
     OSRS_DB object is used to connect and interact with the main sqlite db.
     '''
-    def __init__(self, name) -> None:
-        self.dbName = f"{name}.db"
+    def __init__(self, dbPath) -> None:
+        self.dbName = dbPath
         self.conn = sqlite3.connect(self.dbName)
+        print(f"Connecting to {self.dbName}...")
 
     def readQuery(self, query: str):
         try:
@@ -23,7 +24,7 @@ class OSRS_DB():
         except Exception as e:
             print(f"An error occured: {e}")
     
-    def writeQuery(self, query:str):
+    def writeQuery(self, query:str) -> None:
         try:
             # Create cursor object for queries
             cursor = self.conn.cursor()
@@ -37,4 +38,8 @@ class OSRS_DB():
         except Exception as e:
             print(f"An error occured: {e}")
 
+    def closeConnection(self):
+        # Handle db connection termination
+        self.conn.close()
+        print(f"Closing connection to {self.dbName}...")
 

@@ -1,9 +1,7 @@
 import streamlit as st
 import pandas as pd
 from utils import utils
-
-
-def main():
+def app():
     # Set up the dashboard title and sidebar options.
     st.title("OSRS GE Report Dashboard")
     st.sidebar.header("Report Options")
@@ -38,4 +36,4 @@ def main():
     st.write("This is a basic dashboard shell. Customize and expand it with your own scripts and queries.")
 
 if __name__ == "__main__":
-    main()
+    app()
