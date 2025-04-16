@@ -1,0 +1,67 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+    <title>Streamlit Table View</title>
+
+    <!-- DataTables CSS & JS -->
+    <link rel="stylesheet" type="text/css" href="https://cdn.datatables.net/1.10.25/css/jquery.dataTables.css"/>
+    <script src="https://code.jquery.com/jquery-3.6.0.min.js"></script>
+    <script src="https://cdn.datatables.net/1.10.25/js/jquery.dataTables.min.js"></script>
+
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            padding: 1em;
+            background-color: #f9f9f9;
+        }
+
+        table.dataTable thead th,
+        table.dataTable tbody td {
+            text-align: center;
+        }
+
+        table {
+            width: 100% !important;
+            margin-top: 1em;
+        }
+    </style>
+</head>
+<body>
+
+    <h2>Report Table</h2>
+
+    <table id="beautifulTable" class="display">
+        <thead>
+            <tr>
+                {% for col in data[0].keys() %}
+                    <th>{{ col }}</th>
+                {% endfor %}
+            </tr>
+        </thead>
+        <tbody>
+            {% for row in data %}
+                <tr>
+                    {% for cell in row.values() %}
+                        <td>{{ cell }}</td>
+                    {% endfor %}
+                </tr>
+            {% endfor %}
+        </tbody>
+    </table>
+
+    <script>
+        $(document).ready(function() {
+            $('#beautifulTable').DataTable({
+                paging: true,
+                searching: true,
+                ordering: true,
+                lengthMenu: [10, 25, 50, 100],
+                autoWidth: true
+            });
+        });
+    </script>
+
+</body>
+</html>
