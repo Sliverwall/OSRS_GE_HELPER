@@ -37,7 +37,7 @@ def load_report(report_type: str):
     alpha = 1.02
     report_df = get_dip_score(df=report_df, alpha=alpha)
     # Construct a signal metrics
-    report_df['signal'] = (report_df['potential_profit'] * report_df['limit'] * (report_df['minVol']) * report_df['percent_sold'])
+    report_df['signal'] = (report_df['potential_profit']  * report_df['percent_sold'])
     report_df['signal'] = report_df['signal'].apply(np.log10)
 
     report_df = report_df[["name", "avgHighPrice", "avgLowPrice", "total_volume", "percent_sold", "limit", "margin", "signal", "ROI", 'dip_score', "potential_profit"]]
@@ -154,7 +154,7 @@ def load_dip_report() -> pd.DataFrame:
     report_df['good'] = report_df['hourlyLowPrice'] > (report_df['low'] * alpha)
 
     # Clean up 
-    ideal_cols = ['name', 'avgLowPrice', 'low', 'limit', 'total_volume', 'potential_profit', 'ROI', 'good']
+    ideal_cols = ['name', 'avgHighPrice', 'avgLowPrice', 'low', 'limit', 'total_volume', 'potential_profit', 'ROI', 'good']
 
     report_df = report_df[ideal_cols]
 
