@@ -1,6 +1,7 @@
 import requests
 import pandas as pd
-import time
+import numpy as np
+
 def get_API_request(url: str, headers: dict) -> requests.Response:
     '''
     Uses python's  built in request handler to get an HTTP request.
@@ -51,8 +52,11 @@ def extract_timeseries_request(r: requests.Response) -> pd.DataFrame:
     # Add tax column
     TAX_LIMIT = 5000000
     TAX_RATE = 0.01 # 1% tax for items above 100
+    MIN_TAX = 1
     # Tax rounds down to nearest int.
     df['tax'] = round((df["avgHighPrice"] * TAX_RATE).clip(upper=TAX_LIMIT), 0)
+
+    df['tax'] = df['tax'].where(df['tax'] >= MIN_TAX, 0)
 
     # Add margin column. margin = (sell - tax) - buy
     df['margin'] = round((df["avgHighPrice"] - df["tax"]) - df["avgLowPrice"],0)
@@ -69,11 +73,49 @@ def extract_timeseries_request(r: requests.Response) -> pd.DataFrame:
     # Get relationship between the volume and spread. Use the buy volume
     df['margin-volume'] = df['lowPriceVolume'] * df['margin']
 
+    # map out the bottle neck volume
+    df['minVol'] = np.minimum(df['highPriceVolume'], df['lowPriceVolume'])
+
     # Reorganize the field positions
-    ideal_cols = ['id','timestamp', 'formatted_timestamp', 'avgHighPrice','highPriceVolume','avgLowPrice','lowPriceVolume', 'total_volume', 'percent_sold', 'tax', 'margin', 'ROI', 'margin-volume']
+    ideal_cols = ['id','timestamp', 'formatted_timestamp', 'avgHighPrice','highPriceVolume','avgLowPrice','lowPriceVolume', 'total_volume', 'percent_sold', 'tax', 'margin', 'ROI', 'margin-volume', 'minVol']
 
     df = df[ideal_cols]
     return df
+
+def extract_latest_timeseries_request(r: requests.Response) -> pd.DataFrame:
+    '''
+    Timeseries extraction takes an OSRS wiki API for the latest timeseries data then returns a pandas dataframe
+    The API key should be as follows: 'https://prices.runescape.wiki/api/v1/osrs/latest'
+    '''
+    # Convert request into json format
+    json_data = r.json()
+
+    # Extract data
+    response_data = json_data["data"]
+
+    # Turn dict components to lists
+    key_list = list(response_data.keys())
+    value_list = list(response_data.values())
+
+    # Make a list of lists where each entry is a example
+    initial_cols = ['id','high','highTime','low','lowTime']
+    total_values = []
+    total_keys_and_values = []
+    for value in value_list:
+        sub_values = list(value.values())
+        total_values.append(sub_values)
+    for key1, value1 in zip(key_list, total_values):
+        total_keys_and_values.append([key1] + value1)
+
+    # Create a df from the extracted data
+    df = pd.DataFrame(total_keys_and_values, columns=initial_cols)
+
+    # Convert the Unix timestamp to datetime. By default, the Unix epoch is in UTC.
+    df['highTime'] = pd.to_datetime(df['highTime'], unit='s').dt.tz_localize('UTC')
+    df['lowTime'] = pd.to_datetime(df['lowTime'], unit='s').dt.tz_localize('UTC')
+
+    return df
+
 
 def extract_item_mapping(r: requests.Response) -> pd.DataFrame:
     '''
@@ -93,5 +135,7 @@ def extract_item_mapping(r: requests.Response) -> pd.DataFrame:
     ideal_cols = ["id","name", "limit", "lowalch", "highalch", "members"]
 
     df = df[ideal_cols]
+
     return df
+
 

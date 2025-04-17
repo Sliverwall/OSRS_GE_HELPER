@@ -21,13 +21,17 @@ def start_server():
 
     st.sidebar.markdown("---")
 
-    #-----------SINGLE ITEM REPORT OPTIONS----------------
-    st.sidebar.header("Single-Item Report Options")
+    #-----------SHOCK REPORT OPTIONS----------------
+    st.sidebar.header("Specific Report Options")
     # Single Item Report Options
-    report_item = st.sidebar.text_input(label="Enter Item Name")
-    if st.sidebar.button("Generate Single-Item Report"):
+    specific_report_type = st.sidebar.selectbox(
+        "Select Report Type",
+        options=["Shock-Report"]
+    )
+    specific_report_df = pd.DataFrame()
+    if st.sidebar.button("Generate Specific Report"):
         with st.spinner("Generating report..."):
-            report_df = load_report(report_type=report_type)
+            specific_report_df = load_specific_report(report_type=specific_report_type)
 
     #-----------OTHER OPTIONS----------------
     st.sidebar.markdown("---")
@@ -37,28 +41,21 @@ def start_server():
 
     
     #-----------TABS----------------
-    tab1, tab2 = st.tabs(["📊 General Report", "📈 Single-Item Report"])
+    tab1, tab2 = st.tabs(["📊 General Report", "📊 Specific Report"])
 
     with tab1:
         if not report_df.empty:
             st.subheader(f"Results for {report_type}")
-            st.dataframe(report_df.reset_index(drop=True), use_container_width=True)
+            st.dataframe(report_df.reset_index(drop=True), hide_index=True)
         else:
             st.info("Select a report type and click Generate Report.")
 
     with tab2:
-        if not report_df.empty:
-            st.subheader(f"Graphs for {report_type}")
-
-            # Example graph: ROI distribution
-            st.bar_chart(report_df.set_index("name")["ROI"].head(10))
-
-            # Example line chart: Prices over time (if you have a time series for 1 item)
-            selected_item = st.selectbox("Select an item", report_df["name"].unique())
-            item_df = report_df[report_df["name"] == selected_item]
-            st.line_chart(item_df[["avgHighPrice", "avgLowPrice"]])
+        if not specific_report_df.empty:
+            st.subheader(f"Results for {specific_report_type}")
+            st.dataframe(specific_report_df.reset_index(drop=True), hide_index=True)
         else:
-            st.info("Generate a report first to view graphs.")
+            st.info("Select a report type and click Generate Report.")
 
 if __name__ == "__main__":
     start_server()
