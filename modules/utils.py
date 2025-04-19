@@ -131,6 +131,9 @@ def extract_item_mapping(r: requests.Response) -> pd.DataFrame:
     # Create a df from the extracted data
     df = pd.DataFrame(list(response_data), columns=initial_cols)
 
+    # Replace unknown item limits with 999
+    df['limit'] = df['limit'].fillna(999)
+
     # Organize column positions and remove icon and examine fields
     ideal_cols = ["id","name", "limit", "lowalch", "highalch", "members"]
 
