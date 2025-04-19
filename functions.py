@@ -4,7 +4,12 @@ from modules import utils
 import time
 import numpy as np
 
-def load_report(report_type: str):
+def load_report(report_type: str, weights:list=[
+                                            0.94, # "profit" 0
+                                            0.03,  # "sold" 1
+                                            0.01,    # "roi" 2
+                                            0.02,    # total_volume
+                                            ], alpha:float = 1.02):
     """
     Generate a report based on the selected report_type.
     """
@@ -34,17 +39,24 @@ def load_report(report_type: str):
     report_df['potential_profit'] = (report_df['margin'] * np.minimum(report_df['limit'], report_df['minVol'])) / 1000
 
     # Use dip score to see how relatively low the current buy price is.
-    alpha = 1.02
     report_df = get_dip_score(df=report_df, alpha=alpha)
+
     # Construct a signal metrics
-    report_df['signal'] = (report_df['potential_profit']  * report_df['percent_sold'])
-    report_df['signal'] = report_df['signal'].apply(np.log10)
+    # Min-max normalize both features to range [0, 1]
+    report_df['normalized_profit'] = (report_df['potential_profit'] - report_df['potential_profit'].min()) / (report_df['potential_profit'].max() - report_df['potential_profit'].min())
+    report_df['normalized_sold'] = (report_df['percent_sold'] - report_df['percent_sold'].min()) / (report_df['percent_sold'].max() - report_df['percent_sold'].min())
+    report_df['normalized_ROI'] = (report_df['ROI'] - report_df['ROI'].min()) / (report_df['ROI'].max() - report_df['ROI'].min())
+    report_df['normalized_vol'] = (report_df['minVol'] - report_df['minVol'].min()) / (report_df['minVol'].max() - report_df['minVol'].min())
+
+    # Now compute the signal metric
+    report_df['signal'] = (weights[0] * report_df['normalized_profit']) + (weights[1] * report_df['normalized_sold']) + (weights[2] * report_df['normalized_ROI']) + (weights[3] * report_df['normalized_vol'])
+
 
     report_df = report_df[["name", "avgHighPrice", "avgLowPrice", "total_volume", "percent_sold", "limit", "margin", "signal", "ROI", 'dip_score', "potential_profit"]]
 
     # Filter by set conditions
     MIN_POTENTIAL_PROFIT = 100
-    MIN_SIGNAL = 3
+    MIN_SIGNAL = 0.5
     MIN_ROI = 3
 
     # Create a boolean column based on the conditions
