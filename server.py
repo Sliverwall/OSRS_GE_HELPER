@@ -3,6 +3,10 @@ import pandas as pd
 from functions import *
 import matplotlib.pyplot as plt
 import config
+import modules
+import models.RuneLSTM
+import models.RuneTrainer
+import modules.rune_plots
 
 st.set_page_config(layout="wide")
 def start_server():
@@ -47,7 +51,7 @@ def start_server():
 
     #-----------SHOCK REPORT OPTIONS----------------
     st.sidebar.header("Specific Report Options")
-    # Single Item Report Options
+    # Shock Report Options
     specific_report_type = st.sidebar.selectbox(
         "Select Report Type",
         options=["Shock-Report"]
@@ -57,6 +61,53 @@ def start_server():
     if st.sidebar.button("Generate Specific Report"):
         with st.spinner("Generating report..."):
             specific_report_df = load_specific_report(report_type=specific_report_type)
+
+    #-----------Single Item REPORT OPTIONS----------------
+    st.sidebar.header("Single-Item Report Options")
+    # Shock Report Options
+    item_report_name = st.sidebar.text_input("Item Name") # Get name of item to run report on
+    item_report_type = st.sidebar.selectbox(
+        "Select Report Type",
+        options=["5m", '1h', '24h']
+    )
+    item_report_df = pd.DataFrame()
+
+    if st.sidebar.button("Generate Single-Item Report"):
+        with st.spinner("Generating report..."):
+            item_report_df = load_single_item_report(item_name=item_report_name,
+                                                     report_type=item_report_type)
+            with st.spinner("Modeling using selected time-series..."):
+                # Choose input features
+                input_features = ['avgHighPrice', 'avgLowPrice', 'percent_sold','highPriceVolume','lowPriceVolume','margin','ROI']
+                # Choose target features
+                target_features = ['avgHighPrice', 'avgLowPrice']
+
+                # Init model
+                model = models.RuneLSTM.RuneLSTM(num_inputs=len(input_features),
+                                                 hidden_size=32,
+                                                 num_layers=2,
+                                                 output_size=len(target_features))
+                # Init Trainer
+                trainer = models.RuneTrainer.RuneTrainer(model=model,
+                                                         input_features=input_features,
+                                                         target_features=target_features,
+                                                         num_epochs=100,
+                                                         batch_size=32,
+                                                         seq_length=10)
+                # Create data loader using generated item report df
+                data_loader, X, y = trainer.create_data_loader(data=item_report_df)
+
+                # Use trainer to fit the model
+                trainer.fit(data_loader=data_loader)
+
+                ### Save model later
+                # Use autogression to predict next set of points
+                pred_y = trainer.autoregressive_pred(input_seq=X[-1], n_steps=10)
+
+                # Create figure using predicted values
+                fig = modules.rune_plots.plot_price_prediction(y=y, preds=pred_y)
+                st.pyplot(fig)
+
 
     #-----------OTHER OPTIONS----------------
     st.sidebar.markdown("---")
@@ -84,18 +135,9 @@ def start_server():
         else:
             st.info("Select a report type and click Generate Report.")
     with tab3:
-        st.subheader("Sample Matplotlib Plot")
-        
-        # Example plot
-        x = np.linspace(0, 10, 100)
-        y = np.sin(x)
-
-        fig, ax = plt.subplots(figsize=(8, 3))
-        ax.plot(x, y)
-        ax.set_title("Sine Wave")
-        ax.set_xlabel("X axis")
-        ax.set_ylabel("Y axis")
-
-        st.pyplot(fig)
+        st.subheader("Single Item Report")
+        if not item_report_df.empty:
+            st.subheader(f"Results for {item_report_name} at time step {item_report_type}")
+            st.dataframe(item_report_df.reset_index(drop=True), hide_index=True)
 if __name__ == "__main__":
     start_server()

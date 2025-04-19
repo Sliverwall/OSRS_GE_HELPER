@@ -2,25 +2,26 @@
 import torch
 from torch import nn
 from torch.nn import functional as F
-import torchvision
-from torch.utils.data import TensorDataset, DataLoader
-import torch.optim as optim
 
-import numpy as np
-
-from sklearn.preprocessing import MinMaxScaler
 '''Construct a model with a RNN layer + a MLP to process the regression'''
 class RuneLSTM(nn.Module):
-    def __init__(self, num_inputs, hidden_size, num_layers, output_size):
+    def __init__(self, num_inputs, hidden_size, num_layers, output_size, device:str="cuda:0"):
         super(RuneLSTM, self).__init__()
+        self.device = device
         self.hidden_size = hidden_size
         self.num_layers = num_layers
         
         # use torch.nn LSTM layer to handle LSTM logic. Expects: (t, batch_size, features)
         self.lstm = nn.LSTM(num_inputs, hidden_size, num_layers, batch_first=False)
         
-        # Use a linear model to handle the regression
-        self.net = nn.Linear(hidden_size, output_size)
+
+        # Network to handle regression task
+        self.net = nn.Sequential(
+            nn.Linear(hidden_size, hidden_size // 2),
+            nn.ReLU(),
+            nn.Dropout(0.2),
+            nn.Linear(hidden_size // 2, output_size)
+        )
         
         # Dropout layer after LSTM to regularize between the layers
         self.dropout = nn.Dropout(0.2)
@@ -44,3 +45,4 @@ class RuneLSTM(nn.Module):
         # Use the last time step's output for regression
         output = self.net(output[-1])
         return output
+

@@ -175,6 +175,37 @@ def load_dip_report() -> pd.DataFrame:
 
     return report_df
 
+
+def load_single_item_report(item_name:str, report_type:str) -> pd.DataFrame:
+    '''
+    Report to generarte single item time-series data
+    '''
+    # Load in item mappings to link item name to specific id
+    item_mapping_df = pd.read_csv(f"{config.DATA_DIR}item_mapping.csv")
+
+    # Get the item's mapping data before querying API
+    item_data = item_mapping_df[item_mapping_df['name'] == item_name].iloc[0]
+    itemId = item_data['id']
+
+    # Query time series data for choosen item
+    # Response query example: https://prices.runescape.wiki/api/v1/osrs/timeseries?timestep=5m&id=4151
+    url = f"https://prices.runescape.wiki/api/v1/osrs/timeseries?timestep={report_type}&id={itemId}"
+
+    time_series_response = utils.get_API_request(url=url, headers=config.HEADERS)
+
+    # Use extraction function to create an organzied pandas frame for the time-series response data
+    time_series_df = utils.extract_single_item_data(r=time_series_response)
+
+    # Add name column
+    time_series_df['name'] = item_name
+
+    # Organize columns
+    col_names = ['id', 'name', 'timestamp', 'formatted_timestamp', 'avgHighPrice', 'avgLowPrice', 'highPriceVolume','lowPriceVolume','percent_sold','minVol','margin','ROI']
+    time_series_df = time_series_df[col_names]
+    # Return cleaned df
+    return time_series_df
+
+
 def time_series_cache():
     '''
     cache routine to grab timeseries data from OSRS wiki API

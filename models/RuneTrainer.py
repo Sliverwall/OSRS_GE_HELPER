@@ -1,16 +1,14 @@
 '''Module for trainer methods for the RuneLSTM'''
 import torch
-import torchvision
 from torch import nn
 from torch.utils.data import TensorDataset, DataLoader
 import torch.optim as optim
 import numpy as np
 import pandas as pd
 from sklearn.preprocessing import MinMaxScaler
-
 class RuneTrainer():
     def __init__(self, 
-                 model, 
+                 model,
                  input_features:list,
                  target_features:list,
                  num_epochs:int=100,
@@ -34,7 +32,8 @@ class RuneTrainer():
         self.seq_length = seq_length
 
         # Data adjustment
-        self.scaler = MinMaxScaler()
+        self.input_scaler = MinMaxScaler()
+        self.target_scaler = MinMaxScaler()
 
         # Training config
         self.loss_fn = loss_fn
@@ -43,55 +42,46 @@ class RuneTrainer():
 
     '''Create dataset methods'''
     def create_sequences(self, 
-                         input_array,
-                         target_array,
-                         sequence_length:int) -> tuple[torch.Tensor,torch.Tensor]:
+                         input_array:np.ndarray,
+                         target_array:np.ndarray) -> tuple[torch.Tensor,torch.Tensor]:
         '''
         Method used to create time series inputs and targets
         Order the data in acending order to ensure proper sequence alighment
         '''
         xs, ys = [], []
 
-        for i in range(len(input_array) - sequence_length):
-            x = input_array[i:i+sequence_length]
-            y = target_array[i+sequence_length]  # predict next point (regression)
+        for i in range(len(input_array) - self.seq_length):
+            x = input_array[i:i+self.seq_length]
+            y = target_array[i+self.seq_length]  # predict next point (regression)
             xs.append(x)
             ys.append(y)
         return torch.tensor(xs, dtype=torch.float32), torch.tensor(ys, dtype=torch.float32)
 
     def create_data_loader(self, 
-                        data:pd.DataFrame, 
-                        sequence_length:int=10):
+                        data:pd.DataFrame):
         # Sort data by the time feature to ensure proper sequence alighment
         data = data.sort_values(self.time_feature)
         # Handle missing data points using a linear interpolation
         data = data.interpolate(method='linear', limit_direction='both')
 
-        # Extract input_data and target_data from general dataframe
-        input_data = data[self.input_features]
-        target_data = data[self.target_features]
+        # 2) extract arrays
+        inputs  = data[self.input_features].values       # (T, nin)
+        targets = data[self.target_features].values      # (T, nout)
 
-        # Use trainer's scaler method to input scale features
-        input_data[self.input_features] = self.scaler.fit_transform(data[self.input_features])
+        # transform both
+        inputs  = self.input_scaler .fit_transform(inputs)
+        targets_scaled = self.target_scaler.fit_transform(targets)
 
-        # Convert inputs and targets to numpy arrays
-        input_array = input_data.values()
-        target_array = target_data.values()
-
-        # Check if input_array length and target_array length align
-        if len(input_array) != len(target_array):
-            print("ERROR at create_data_loader.... input feature length does not match target feature length")
-            return
-        
         # Create sequenced data arrays
-        X, y = self.create_sequences(input_array=input_array, target_array=target_array,sequence_length=sequence_length)
+        X, y = self.create_sequences(input_array=inputs, target_array=targets_scaled)
 
         # Wrap sequenced data into a tensor dataloader
         dataset = TensorDataset(X, y)
         loader = DataLoader(dataset=dataset,
                             batch_size=self.batch_size)
         
-        return loader
+        # Return loader for fitting, X for autoregressive predictions, and unscaled targets for plotting
+        return loader, X, targets
     
     '''Set up training function'''
     def fit(self, 
@@ -109,3 +99,42 @@ class RuneTrainer():
                 self.optimizer.step()
             if (epoch+1) % 10 == 0:
                 print(f'Epoch [{epoch+1}/{self.num_epochs}], Loss: {loss.item():.4f}')
+
+    def autoregressive_pred(self, 
+                            input_seq, 
+                            n_steps:int=10) -> np.ndarray:
+        # In eval mode, get predictions
+        self.model.eval()
+
+        # ensure batch dimension
+        if input_seq.dim() == 2:            # (seq_len, features)
+            input_seq = input_seq.unsqueeze(0)  # → (1, seq_len, features)
+
+        # Init predictions list
+        predictions = []
+        # Auto regression
+        with torch.no_grad():
+            for _ in range(n_steps):
+                # pred: (1, 2)
+                pred = self.model(input_seq.to(self.device))  
+                pred = pred.unsqueeze(1)  # → (1, 1, 2)
+
+                # Build a full 7‑feature vector for the new step,
+                # copying the “other” 5 features from the *last* step of input_seq
+                last_step = input_seq[:, -1:, :].clone()       # (1,1,7)
+                last_step[..., :2] = pred                      # overwrite first two dims
+                                                            # so last_step is now (1,1,7)
+                # shift window and append
+                input_seq = torch.cat([ input_seq[:,1:,:], last_step ], dim=1)
+
+                predictions.append(pred)
+
+            # Combine predictions into a single tensor
+            preds = torch.cat(predictions, dim=1)  # shape: (1, n_steps, num_features)
+
+            # Convert to a numpy array to use for plotting
+            preds_numpy = preds.squeeze(0).cpu().numpy()
+
+            # Unscale the predictions
+            preds_unscaled = self.target_scaler.inverse_transform(preds_numpy)
+            return preds_unscaled
