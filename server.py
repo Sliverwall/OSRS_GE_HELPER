@@ -80,17 +80,16 @@ def start_server():
                 # Choose input features
                 input_features = ['avgHighPrice', 'avgLowPrice', 'percent_sold','highPriceVolume','lowPriceVolume','margin','ROI']
                 # Choose target features
-                target_features = ['avgHighPrice', 'avgLowPrice']
+                target_indices = [0, 1]
 
                 # Init model
                 model = models.RuneLSTM.RuneLSTM(num_inputs=len(input_features),
                                                  hidden_size=32,
                                                  num_layers=2,
-                                                 output_size=len(target_features))
+                                                 output_size=len(input_features))
                 # Init Trainer
                 trainer = models.RuneTrainer.RuneTrainer(model=model,
                                                          input_features=input_features,
-                                                         target_features=target_features,
                                                          num_epochs=100,
                                                          batch_size=32,
                                                          seq_length=10)
@@ -103,10 +102,12 @@ def start_server():
                 ### Save model later
                 # Use autogression to predict next set of points
                 pred_y = trainer.autoregressive_pred(input_seq=X[-1], n_steps=10)
-
+                
+                # Get specific columns for plotting
+                pred_selected = pred_y[:, target_indices]
+                y_selected = y[:,target_indices]
                 # Create figure using predicted values
-                fig = modules.rune_plots.plot_price_prediction(y=y, preds=pred_y)
-                st.pyplot(fig)
+                single_item_fig = modules.rune_plots.plot_price_prediction(y=y_selected, preds=pred_selected)
 
 
     #-----------OTHER OPTIONS----------------
@@ -118,7 +119,7 @@ def start_server():
     
     #-----------TABS----------------
     tab1, tab2, tab3 = st.tabs(["📊 General Report", "📊 Specific Report", "📈 Single-Item Report"])
-
+    
     with tab1:
         if not report_df.empty:
             st.subheader(f"Results for {report_type}")
@@ -138,6 +139,8 @@ def start_server():
         st.subheader("Single Item Report")
         if not item_report_df.empty:
             st.subheader(f"Results for {item_report_name} at time step {item_report_type}")
+            if single_item_fig:
+                st.pyplot(single_item_fig)
             st.dataframe(item_report_df.reset_index(drop=True), hide_index=True)
 if __name__ == "__main__":
     start_server()

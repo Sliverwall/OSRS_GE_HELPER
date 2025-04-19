@@ -10,7 +10,6 @@ class RuneTrainer():
     def __init__(self, 
                  model,
                  input_features:list,
-                 target_features:list,
                  num_epochs:int=100,
                  batch_size:int=32,
                  seq_length:int=10,
@@ -25,7 +24,6 @@ class RuneTrainer():
 
         # Data config
         self.input_features = input_features
-        self.target_features = target_features
         self.time_feature = time_feature
         self.batch_size = batch_size
         self.num_epochs = num_epochs
@@ -33,7 +31,6 @@ class RuneTrainer():
 
         # Data adjustment
         self.input_scaler = MinMaxScaler()
-        self.target_scaler = MinMaxScaler()
 
         # Training config
         self.loss_fn = loss_fn
@@ -42,8 +39,7 @@ class RuneTrainer():
 
     '''Create dataset methods'''
     def create_sequences(self, 
-                         input_array:np.ndarray,
-                         target_array:np.ndarray) -> tuple[torch.Tensor,torch.Tensor]:
+                         input_array:np.ndarray) -> tuple[torch.Tensor,torch.Tensor]:
         '''
         Method used to create time series inputs and targets
         Order the data in acending order to ensure proper sequence alighment
@@ -52,7 +48,7 @@ class RuneTrainer():
 
         for i in range(len(input_array) - self.seq_length):
             x = input_array[i:i+self.seq_length]
-            y = target_array[i+self.seq_length]  # predict next point (regression)
+            y = input_array[i+self.seq_length]  # predict next point (regression)
             xs.append(x)
             ys.append(y)
         return torch.tensor(xs, dtype=torch.float32), torch.tensor(ys, dtype=torch.float32)
@@ -65,23 +61,21 @@ class RuneTrainer():
         data = data.interpolate(method='linear', limit_direction='both')
 
         # 2) extract arrays
-        inputs  = data[self.input_features].values       # (T, nin)
-        targets = data[self.target_features].values      # (T, nout)
+        inputs = data[self.input_features].values  # shape (T, n_feats)
+        scaled = self.input_scaler.fit_transform(inputs)
 
-        # transform both
-        inputs  = self.input_scaler .fit_transform(inputs)
-        targets_scaled = self.target_scaler.fit_transform(targets)
+        # Create sequenced data arrays. Input needs to be the same size as the output
+        X, y = self.create_sequences(input_array=scaled)
 
-        # Create sequenced data arrays
-        X, y = self.create_sequences(input_array=inputs, target_array=targets_scaled)
+        # Get unscaled targets for plot labels
+        y_unscaled = inputs[self.seq_length :]
 
         # Wrap sequenced data into a tensor dataloader
         dataset = TensorDataset(X, y)
-        loader = DataLoader(dataset=dataset,
-                            batch_size=self.batch_size)
+        loader = DataLoader(dataset=dataset, batch_size=self.batch_size, shuffle=False)
         
         # Return loader for fitting, X for autoregressive predictions, and unscaled targets for plotting
-        return loader, X, targets
+        return loader, X, y_unscaled
     
     '''Set up training function'''
     def fit(self, 
@@ -100,41 +94,35 @@ class RuneTrainer():
             if (epoch+1) % 10 == 0:
                 print(f'Epoch [{epoch+1}/{self.num_epochs}], Loss: {loss.item():.4f}')
 
-    def autoregressive_pred(self, 
-                            input_seq, 
-                            n_steps:int=10) -> np.ndarray:
-        # In eval mode, get predictions
+    def autoregressive_pred(self, input_seq: torch.Tensor, n_steps: int=10) -> np.ndarray:
+        """
+        input_seq: Tensor of shape (1, seq_length, n_feats)
+        returns:  (n_steps, n_feats) unscaled predictions
+        """
         self.model.eval()
+        # ensure batch dim
+        if input_seq.dim() == 2:
+            input_seq = input_seq.unsqueeze(0)
 
-        # ensure batch dimension
-        if input_seq.dim() == 2:            # (seq_len, features)
-            input_seq = input_seq.unsqueeze(0)  # → (1, seq_len, features)
-
-        # Init predictions list
-        predictions = []
-        # Auto regression
+        preds = []
+        
         with torch.no_grad():
             for _ in range(n_steps):
-                # pred: (1, 2)
-                pred = self.model(input_seq.to(self.device))  
-                pred = pred.unsqueeze(1)  # → (1, 1, 2)
+                # predict next time-step (still scaled)
+                next_pred = self.model(input_seq.to(self.device))  
+                # next_pred: (1, n_feats)
+                next_pred_step = next_pred.unsqueeze(1).to(self.device)           # (1,1,n_feats)
 
-                # Build a full 7‑feature vector for the new step,
-                # copying the “other” 5 features from the *last* step of input_seq
-                last_step = input_seq[:, -1:, :].clone()       # (1,1,7)
-                last_step[..., :2] = pred                      # overwrite first two dims
-                                                            # so last_step is now (1,1,7)
-                # shift window and append
-                input_seq = torch.cat([ input_seq[:,1:,:], last_step ], dim=1)
+                # slide window: drop oldest, append newest
+                input_seq = torch.cat(
+                    [input_seq[:, 1:, :].to(self.device), next_pred_step],
+                    dim=1
+                )
 
-                predictions.append(pred)
+                preds.append(next_pred_step)
 
-            # Combine predictions into a single tensor
-            preds = torch.cat(predictions, dim=1)  # shape: (1, n_steps, num_features)
-
-            # Convert to a numpy array to use for plotting
-            preds_numpy = preds.squeeze(0).cpu().numpy()
-
-            # Unscale the predictions
-            preds_unscaled = self.target_scaler.inverse_transform(preds_numpy)
-            return preds_unscaled
+        # combine and unscale
+        preds_numpy = torch.cat(preds, dim=1).squeeze(0).cpu().numpy()
+        # preds_tensor.shape == (n_steps, n_feats)
+        preds_unscaled = self.input_scaler.inverse_transform(preds_numpy)
+        return preds_unscaled
