@@ -77,37 +77,9 @@ def start_server():
             item_report_df = load_single_item_report(item_name=item_report_name,
                                                      report_type=item_report_type)
             with st.spinner("Modeling using selected time-series..."):
-                # Choose input features
-                input_features = ['avgHighPrice', 'avgLowPrice', 'percent_sold','highPriceVolume','lowPriceVolume','margin','ROI']
-                # Choose target features
-                target_indices = [0, 1]
+                # Model time-series for item then return a prediction df and a figure to plot
+                single_item_pred_df, single_item_fig= model_single_item_report(item_report_df=item_report_df, item_report_type=item_report_type)
 
-                # Init model
-                model = models.RuneLSTM.RuneLSTM(num_inputs=len(input_features),
-                                                 hidden_size=32,
-                                                 num_layers=2,
-                                                 output_size=len(input_features))
-                # Init Trainer
-                trainer = models.RuneTrainer.RuneTrainer(model=model,
-                                                         input_features=input_features,
-                                                         num_epochs=100,
-                                                         batch_size=32,
-                                                         seq_length=10)
-                # Create data loader using generated item report df
-                data_loader, X, y = trainer.create_data_loader(data=item_report_df)
-
-                # Use trainer to fit the model
-                trainer.fit(data_loader=data_loader)
-
-                ### Save model later
-                # Use autogression to predict next set of points
-                pred_y = trainer.autoregressive_pred(input_seq=X[-1], n_steps=10)
-                
-                # Get specific columns for plotting
-                pred_selected = pred_y[:, target_indices]
-                y_selected = y[:,target_indices]
-                # Create figure using predicted values
-                single_item_fig = modules.rune_plots.plot_price_prediction(y=y_selected, preds=pred_selected)
 
 
     #-----------OTHER OPTIONS----------------
@@ -141,6 +113,9 @@ def start_server():
             st.subheader(f"Results for {item_report_name} at time step {item_report_type}")
             if single_item_fig:
                 st.pyplot(single_item_fig)
+                st.subheader("Prediticion Table")
+                st.dataframe(single_item_pred_df.reset_index(drop=True), hide_index=True)
+            st.subheader("Historical table")
             st.dataframe(item_report_df.reset_index(drop=True), hide_index=True)
 if __name__ == "__main__":
     start_server()

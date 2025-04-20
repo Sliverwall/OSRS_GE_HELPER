@@ -3,7 +3,9 @@ import config
 from modules import utils
 import time
 import numpy as np
-
+import models.RuneLSTM
+import models.RuneTrainer
+import modules.rune_plots
 def load_report(report_type: str, weights:list=[
                                             0.94, # "profit" 0
                                             0.03,  # "sold" 1
@@ -152,6 +154,9 @@ def load_dip_report() -> pd.DataFrame:
 
     report_df['low_tax'] = report_df['low_tax'].where(report_df['low_tax'] >= MIN_TAX, 0)
 
+    # Add an additional 300k if it is a bond
+    report_df.loc[report_df['id'] == 13190, 'low_tax'] += 300000
+
     # Calculate the profit_per_unit. Assume will buy at latest low and sell at avg low
     report_df['profit_per_unit'] = report_df['avgLowPrice'] - report_df['low'] - report_df['low_tax']
 
@@ -206,6 +211,66 @@ def load_single_item_report(item_name:str, report_type:str) -> pd.DataFrame:
     return time_series_df
 
 
+def model_single_item_report(item_report_df:pd.DataFrame, item_report_type:str):
+                # Choose input features
+                input_features = ['avgHighPrice', 'avgLowPrice', 'percent_sold']
+                # Choose target features
+                target_indices = [0,1]
+
+                # Init model
+                model = models.RuneLSTM.RuneLSTM(num_inputs=len(input_features),
+                                                 hidden_size=32,
+                                                 num_layers=2,
+                                                 output_size=len(input_features))
+                # Init Trainer
+                trainer = models.RuneTrainer.RuneTrainer(model=model,
+                                                         input_features=input_features,
+                                                         num_epochs=100,
+                                                         batch_size=32,
+                                                         seq_length=10)
+                # Create data loader using generated item report df
+                data_loader, X, y = trainer.create_data_loader(data=item_report_df)
+
+                # Use trainer to fit the model
+                trainer.fit(data_loader=data_loader)
+
+                ### Save model later
+                # Use autogression to predict next set of points
+                n_steps = 10
+                pred_y = trainer.autoregressive_pred(input_seq=X[-1], n_steps=n_steps)
+                
+                # Get specific columns for plotting
+                pred_selected = pred_y[:, target_indices]
+                y_selected = y[:,target_indices]
+
+                # Create figure using predicted values
+                single_item_fig = modules.rune_plots.plot_price_prediction(y=y_selected, preds=pred_selected)
+                
+                # Add time stamps to prediction output
+                latest_stamp = item_report_df['timestamp'].max()
+                # endpoints = [['5m/', 300, 2], ['1h/', 3600, 30], ['24h/', 86400, 365]]
+                interval = {
+                    "5m":300,
+                    "1h":3600,
+                    "24h":86400
+                }
+                # Init value array to track preds
+                new_pred_y = []
+                for i, pred in enumerate(pred_y):
+                    # Init value to track new time-stamps
+                    new_time = (interval[item_report_type]*(1+i)) + (latest_stamp)
+                    # Append to existing pred array: ['avgHighPrice', 'avgLowPrice', 'percent_sold','highPriceVolume','lowPriceVolume']
+                    new_pred_y.append([pred[0], pred[1], pred[2], new_time])
+
+                new_pred_y = np.array(new_pred_y)
+                # Create pred df for display
+                prediction_features = ['avgHighPrice', 'avgLowPrice', "percent_sold", "timestamp"]
+                single_item_pred_df = pd.DataFrame(new_pred_y, columns=prediction_features)
+                # Format time
+                single_item_pred_df['formatted_timestamp'] = pd.to_datetime(single_item_pred_df['timestamp'], unit='s')
+
+                single_item_pred_df['formatted_timestamp']= single_item_pred_df['formatted_timestamp'].dt.tz_localize('UTC').dt.tz_convert('US/Eastern')
+                return single_item_pred_df, single_item_fig
 def time_series_cache():
     '''
     cache routine to grab timeseries data from OSRS wiki API

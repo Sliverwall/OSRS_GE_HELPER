@@ -58,6 +58,9 @@ def extract_timeseries_request(r: requests.Response) -> pd.DataFrame:
 
     df['tax'] = df['tax'].where(df['tax'] >= MIN_TAX, 0)
 
+    # Add an additional 300k if it is a bond
+    df.loc[df['id'] == 13190, 'tax'] += 300000
+
     # Add margin column. margin = (sell - tax) - buy
     df['margin'] = round((df["avgHighPrice"] - df["tax"]) - df["avgLowPrice"],0)
 
@@ -166,7 +169,7 @@ def extract_single_item_data(r: requests.Response) -> pd.DataFrame:
     # Convert the Unix timestamp to datetime. By default, the Unix epoch is in UTC.
     df['formatted_timestamp'] = pd.to_datetime(df['timestamp'], unit='s')
 
-    df['formatted_timestamp']= df['formatted_timestamp'].dt.tz_localize('UTC')
+    df['formatted_timestamp']= df['formatted_timestamp'].dt.tz_localize('UTC').dt.tz_convert('US/Eastern')
 
     # ADD FEATURES
     # Add tax column
