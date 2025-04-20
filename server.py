@@ -54,7 +54,7 @@ def start_server():
     # Shock Report Options
     specific_report_type = st.sidebar.selectbox(
         "Select Report Type",
-        options=["Shock-Report"]
+        options=["Shock-Report", "High-alch Report"]
     )
     specific_report_df = pd.DataFrame()
 
