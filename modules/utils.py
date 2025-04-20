@@ -58,8 +58,8 @@ def extract_timeseries_request(r: requests.Response) -> pd.DataFrame:
 
     df['tax'] = df['tax'].where(df['tax'] >= MIN_TAX, 0)
 
-    # Add an additional 300k if it is a bond
-    df.loc[df['id'] == 13190, 'tax'] += 300000
+    # Add an additional 10% of the high value if it is a bond
+    df.loc[df['id'] == 13190, 'tax'] += df[df['id'] == 13190]["avgHighPrice"] * 0.1
 
     # Add margin column. margin = (sell - tax) - buy
     df['margin'] = round((df["avgHighPrice"] - df["tax"]) - df["avgLowPrice"],0)

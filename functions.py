@@ -73,6 +73,8 @@ def load_specific_report(report_type: str):
     match report_type:
         case ("Shock-Report"):
             return load_dip_report()
+        case ("High-alch Report"):
+              return load_high_alch_report()
 
 
 def get_dip_score(df: pd.DataFrame, alpha: float = 1.02, merge_id: str = 'id') -> pd.DataFrame:
@@ -154,8 +156,8 @@ def load_dip_report() -> pd.DataFrame:
 
     report_df['low_tax'] = report_df['low_tax'].where(report_df['low_tax'] >= MIN_TAX, 0)
 
-    # Add an additional 300k if it is a bond
-    report_df.loc[report_df['id'] == 13190, 'low_tax'] += 300000
+    # Add an additional 10% of the high value if it is a bond
+    report_df.loc[report_df['id'] == 13190, 'low_tax'] += report_df[report_df['id'] == 13190]["avgHighPrice"] * 0.1
 
     # Calculate the profit_per_unit. Assume will buy at latest low and sell at avg low
     report_df['profit_per_unit'] = report_df['avgLowPrice'] - report_df['low'] - report_df['low_tax']
@@ -181,6 +183,51 @@ def load_dip_report() -> pd.DataFrame:
     return report_df
 
 
+def load_high_alch_report() -> pd.DataFrame:
+    '''
+    The high-alch report will take the instant buy price for each item, and nature rune then calculate profit per high-alch.
+    '''
+    # Get needed tables
+    hourly_csv = f"{config.DATA_DIR}time_series_1h.csv"
+    item_mapping_csv = f"{config.DATA_DIR}item_mapping.csv"
+
+    # Load in each dataframe
+    hourly_df = pd.read_csv(hourly_csv)
+    item_mapping_df = pd.read_csv(item_mapping_csv)
+
+    # Only need the id, name and limit columns
+    needed_item_cols = ["id", "name", "limit", "lowalch", "highalch"]
+    item_mapping_df = item_mapping_df[needed_item_cols]
+
+    # Merge time_series df and item_mapping to get the report df
+    report_df = pd.merge(left=hourly_df, right=item_mapping_df, on='id', how='left')
+
+    # Get the high price for a nature rune (id=561)
+    nature_rune_high_price = report_df[report_df['id'] == 561]["avgHighPrice"].iloc[0]
+
+    # Calc a cost per alch
+    report_df['cost_per_alch'] = (report_df['avgHighPrice'] + nature_rune_high_price)
+    # Calc a profit per high-alch
+    report_df['profit_per_high_alch'] = report_df['highalch'] - report_df['cost_per_alch']
+
+    # Calc an ROI for each alch
+    report_df['ROI'] = (report_df['profit_per_high_alch'] / report_df['cost_per_alch']) * 100
+
+    # Use buy limit to get potential purchase from using 1 buy slot. Limit b Can it in k units
+    report_df['potential_profit'] = (report_df['profit_per_high_alch'] * np.minimum(report_df['limit'], report_df['minVol'])) / 1000
+
+    # Calc the profit per hour, using 1200 as the number of alchs per hour
+    alch_per_hour = 1200
+    report_df['profit_per_hour'] = (report_df['profit_per_high_alch'] * alch_per_hour)/1000
+    # Clean up 
+    ideal_cols = ['name', 'avgHighPrice', 'avgLowPrice', 'highalch','profit_per_high_alch', 'cost_per_alch', 'limit', 'total_volume', 'potential_profit', 'profit_per_hour', 'ROI']
+
+    report_df = report_df[ideal_cols]
+
+    # Apply sort by signal
+    report_df = report_df.sort_values(by=["potential_profit"], ascending=[False])
+
+    return report_df
 def load_single_item_report(item_name:str, report_type:str) -> pd.DataFrame:
     '''
     Report to generarte single item time-series data
@@ -229,10 +276,11 @@ def model_single_item_report(item_report_df:pd.DataFrame, item_report_type:str):
                                                          batch_size=32,
                                                          seq_length=10)
                 # Create data loader using generated item report df
-                data_loader, X, y = trainer.create_data_loader(data=item_report_df)
+                train_loader, val_loader, X, y = trainer.create_data_loader(data=item_report_df)
 
                 # Use trainer to fit the model
-                trainer.fit(data_loader=data_loader)
+                trainer.fit(train_loader=train_loader,
+                            val_loader=val_loader)
 
                 ### Save model later
                 # Use autogression to predict next set of points
@@ -270,6 +318,21 @@ def model_single_item_report(item_report_df:pd.DataFrame, item_report_type:str):
                 single_item_pred_df['formatted_timestamp'] = pd.to_datetime(single_item_pred_df['timestamp'], unit='s')
 
                 single_item_pred_df['formatted_timestamp']= single_item_pred_df['formatted_timestamp'].dt.tz_localize('UTC').dt.tz_convert('US/Eastern')
+
+                # Add the delta between the current low price and predicted high price
+                single_item_pred_df['current_low'] = item_report_df[item_report_df['timestamp'] == item_report_df['timestamp'].max()]['avgLowPrice'].iloc[0]
+                # Since will be selling at avglow, need a min tax 
+                TAX_LIMIT = 5000000
+                TAX_RATE = 0.01 # 1% tax for items above 100
+                MIN_TAX = 1
+                # Tax rounds down to nearest int.
+                single_item_pred_df['tax'] = round((single_item_pred_df["avgHighPrice"] * TAX_RATE).clip(upper=TAX_LIMIT), 0)
+
+                single_item_pred_df['tax'] = single_item_pred_df['tax'].where(single_item_pred_df['tax'] >= MIN_TAX, 0)
+
+                single_item_pred_df['future-margin'] = (single_item_pred_df['avgHighPrice'] - single_item_pred_df['tax']) - single_item_pred_df['current_low']
+
+                # single_item_pred_df = single_item_pred_df['avgHighPrice', 'avgLowPrice', 'future-margin', 'tax', 'formatted_timestamp']
                 return single_item_pred_df, single_item_fig
 def time_series_cache():
     '''
