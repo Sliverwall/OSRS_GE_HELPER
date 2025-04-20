@@ -3,8 +3,15 @@ import config
 from modules import utils
 import time
 import numpy as np
-
-def load_report(report_type: str):
+import models.RuneLSTM
+import models.RuneTrainer
+import modules.rune_plots
+def load_report(report_type: str, weights:list=[
+                                            0.94, # "profit" 0
+                                            0.03,  # "sold" 1
+                                            0.01,    # "roi" 2
+                                            0.02,    # total_volume
+                                            ], alpha:float = 1.02):
     """
     Generate a report based on the selected report_type.
     """
@@ -34,17 +41,24 @@ def load_report(report_type: str):
     report_df['potential_profit'] = (report_df['margin'] * np.minimum(report_df['limit'], report_df['minVol'])) / 1000
 
     # Use dip score to see how relatively low the current buy price is.
-    alpha = 1.02
     report_df = get_dip_score(df=report_df, alpha=alpha)
+
     # Construct a signal metrics
-    report_df['signal'] = (report_df['potential_profit']  * report_df['percent_sold'])
-    report_df['signal'] = report_df['signal'].apply(np.log10)
+    # Min-max normalize both features to range [0, 1]
+    report_df['normalized_profit'] = (report_df['potential_profit'] - report_df['potential_profit'].min()) / (report_df['potential_profit'].max() - report_df['potential_profit'].min())
+    report_df['normalized_sold'] = (report_df['percent_sold'] - report_df['percent_sold'].min()) / (report_df['percent_sold'].max() - report_df['percent_sold'].min())
+    report_df['normalized_ROI'] = (report_df['ROI'] - report_df['ROI'].min()) / (report_df['ROI'].max() - report_df['ROI'].min())
+    report_df['normalized_vol'] = (report_df['minVol'] - report_df['minVol'].min()) / (report_df['minVol'].max() - report_df['minVol'].min())
+
+    # Now compute the signal metric
+    report_df['signal'] = (weights[0] * report_df['normalized_profit']) + (weights[1] * report_df['normalized_sold']) + (weights[2] * report_df['normalized_ROI']) + (weights[3] * report_df['normalized_vol'])
+
 
     report_df = report_df[["name", "avgHighPrice", "avgLowPrice", "total_volume", "percent_sold", "limit", "margin", "signal", "ROI", 'dip_score', "potential_profit"]]
 
     # Filter by set conditions
     MIN_POTENTIAL_PROFIT = 100
-    MIN_SIGNAL = 3
+    MIN_SIGNAL = 0.5
     MIN_ROI = 3
 
     # Create a boolean column based on the conditions
@@ -140,6 +154,9 @@ def load_dip_report() -> pd.DataFrame:
 
     report_df['low_tax'] = report_df['low_tax'].where(report_df['low_tax'] >= MIN_TAX, 0)
 
+    # Add an additional 300k if it is a bond
+    report_df.loc[report_df['id'] == 13190, 'low_tax'] += 300000
+
     # Calculate the profit_per_unit. Assume will buy at latest low and sell at avg low
     report_df['profit_per_unit'] = report_df['avgLowPrice'] - report_df['low'] - report_df['low_tax']
 
@@ -163,6 +180,97 @@ def load_dip_report() -> pd.DataFrame:
 
     return report_df
 
+
+def load_single_item_report(item_name:str, report_type:str) -> pd.DataFrame:
+    '''
+    Report to generarte single item time-series data
+    '''
+    # Load in item mappings to link item name to specific id
+    item_mapping_df = pd.read_csv(f"{config.DATA_DIR}item_mapping.csv")
+
+    # Get the item's mapping data before querying API
+    item_data = item_mapping_df[item_mapping_df['name'] == item_name].iloc[0]
+    itemId = item_data['id']
+
+    # Query time series data for choosen item
+    # Response query example: https://prices.runescape.wiki/api/v1/osrs/timeseries?timestep=5m&id=4151
+    url = f"https://prices.runescape.wiki/api/v1/osrs/timeseries?timestep={report_type}&id={itemId}"
+
+    time_series_response = utils.get_API_request(url=url, headers=config.HEADERS)
+
+    # Use extraction function to create an organzied pandas frame for the time-series response data
+    time_series_df = utils.extract_single_item_data(r=time_series_response)
+
+    # Add name column
+    time_series_df['name'] = item_name
+
+    # Organize columns
+    col_names = ['id', 'name', 'timestamp', 'formatted_timestamp', 'avgHighPrice', 'avgLowPrice', 'highPriceVolume','lowPriceVolume','percent_sold','minVol','margin','ROI']
+    time_series_df = time_series_df[col_names]
+    # Return cleaned df
+    return time_series_df
+
+
+def model_single_item_report(item_report_df:pd.DataFrame, item_report_type:str):
+                # Choose input features
+                input_features = ['avgHighPrice', 'avgLowPrice', 'percent_sold']
+                # Choose target features
+                target_indices = [0,1]
+
+                # Init model
+                model = models.RuneLSTM.RuneLSTM(num_inputs=len(input_features),
+                                                 hidden_size=32,
+                                                 num_layers=2,
+                                                 output_size=len(input_features))
+                # Init Trainer
+                trainer = models.RuneTrainer.RuneTrainer(model=model,
+                                                         input_features=input_features,
+                                                         num_epochs=100,
+                                                         batch_size=32,
+                                                         seq_length=10)
+                # Create data loader using generated item report df
+                data_loader, X, y = trainer.create_data_loader(data=item_report_df)
+
+                # Use trainer to fit the model
+                trainer.fit(data_loader=data_loader)
+
+                ### Save model later
+                # Use autogression to predict next set of points
+                n_steps = 10
+                pred_y = trainer.autoregressive_pred(input_seq=X[-1], n_steps=n_steps)
+                
+                # Get specific columns for plotting
+                pred_selected = pred_y[:, target_indices]
+                y_selected = y[:,target_indices]
+
+                # Create figure using predicted values
+                single_item_fig = modules.rune_plots.plot_price_prediction(y=y_selected, preds=pred_selected)
+                
+                # Add time stamps to prediction output
+                latest_stamp = item_report_df['timestamp'].max()
+                # endpoints = [['5m/', 300, 2], ['1h/', 3600, 30], ['24h/', 86400, 365]]
+                interval = {
+                    "5m":300,
+                    "1h":3600,
+                    "24h":86400
+                }
+                # Init value array to track preds
+                new_pred_y = []
+                for i, pred in enumerate(pred_y):
+                    # Init value to track new time-stamps
+                    new_time = (interval[item_report_type]*(1+i)) + (latest_stamp)
+                    # Append to existing pred array: ['avgHighPrice', 'avgLowPrice', 'percent_sold','highPriceVolume','lowPriceVolume']
+                    new_pred_y.append([pred[0], pred[1], pred[2], new_time])
+
+                new_pred_y = np.array(new_pred_y)
+                # Create pred df for display
+                prediction_features = ['avgHighPrice', 'avgLowPrice', "percent_sold", "timestamp"]
+                single_item_pred_df = pd.DataFrame(new_pred_y, columns=prediction_features)
+                # Format time
+                single_item_pred_df['formatted_timestamp'] = pd.to_datetime(single_item_pred_df['timestamp'], unit='s')
+
+                single_item_pred_df['formatted_timestamp']= single_item_pred_df['formatted_timestamp'].dt.tz_localize('UTC').dt.tz_convert('US/Eastern')
+                return single_item_pred_df, single_item_fig
 def time_series_cache():
     '''
     cache routine to grab timeseries data from OSRS wiki API

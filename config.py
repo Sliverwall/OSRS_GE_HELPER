@@ -14,3 +14,11 @@ HEADERS = {
 
 TAX_LIMIT = 5000000
 TAX_RATE = 0.01 # 1% tax for items above 100
+
+'''
+Default weight configs
+'''
+general_profit_weight = 0.94
+general_sold_weight = 0.03
+general_roi_weight = 0.01
+general_vol_weight = 0.02
