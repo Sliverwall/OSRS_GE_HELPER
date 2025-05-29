@@ -51,7 +51,7 @@ def extract_timeseries_request(r: requests.Response) -> pd.DataFrame:
     # ADD FEATURES
     # Add tax column
     TAX_LIMIT = 5000000
-    TAX_RATE = 0.01 # 1% tax for items above 100
+    TAX_RATE = 0.02 # 2% tax for items above 100
     MIN_TAX = 1
     # Tax rounds down to nearest int.
     df['tax'] = round((df["avgHighPrice"] * TAX_RATE).clip(upper=TAX_LIMIT), 0)
@@ -59,7 +59,7 @@ def extract_timeseries_request(r: requests.Response) -> pd.DataFrame:
     df['tax'] = df['tax'].where(df['tax'] >= MIN_TAX, 0)
 
     # Add an additional 10% of the high value if it is a bond
-    df.loc[df['id'] == 13190, 'tax'] += df[df['id'] == 13190]["avgHighPrice"] * 0.1
+    df.loc[df['id'] == "13190", 'tax'] += df.loc[df['id'] == "13190", 'avgHighPrice'].iloc[0] * 0.1
 
     # Add margin column. margin = (sell - tax) - buy
     df['margin'] = round((df["avgHighPrice"] - df["tax"]) - df["avgLowPrice"],0)
@@ -174,7 +174,7 @@ def extract_single_item_data(r: requests.Response) -> pd.DataFrame:
     # ADD FEATURES
     # Add tax column
     TAX_LIMIT = 5000000
-    TAX_RATE = 0.01 # 1% tax for items above 100
+    TAX_RATE = 0.02 # 2% tax for items above 100
     MIN_TAX = 1
     # Tax rounds down to nearest int.
     df['tax'] = round((df["avgHighPrice"] * TAX_RATE).clip(upper=TAX_LIMIT), 0)

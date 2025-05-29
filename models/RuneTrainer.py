@@ -86,7 +86,14 @@ class RuneTrainer():
     '''Set up training function'''
     def fit(self, 
             train_loader: DataLoader,
-            val_loader: DataLoader = None):
+            val_loader: DataLoader = None,
+            load_checkpoint=True,
+            save_checkpoint=True):
+        
+        # Load checkpoint if checked
+        if load_checkpoint:
+            self.load_checkpoint()
+        # Set to train mode
         self.model.train()
         train_losses = []
         val_losses = []
@@ -125,13 +132,40 @@ class RuneTrainer():
                 if (epoch + 1) % 10 == 0:
                     print(f"Epoch [{epoch+1}/{self.num_epochs}] Train Loss: {avg_train_loss:.4f}")
 
+        if save_checkpoint:      
+            # Save checkpoint once done
+            checkpoint = {
+                'epoch': epoch,                          # e.g. current epoch number
+                'model_state_dict': self.model.state_dict(),  # the learnable params
+                'optimizer_state_dict': self.optimizer.state_dict()
+            }
+            # Set checkpoint_path
+            checkpoint_path = 'models/checkpoints/current_model.pth'
+            print(f"Saving checkpoint to {checkpoint_path}")
+            torch.save(checkpoint, checkpoint_path)
         return train_losses, val_losses if val_loader else None
+
+    def load_checkpoint(self, checkpoint_path:str = "models/checkpoints/current_model.pth"):
+        '''
+        Method to load a checkpoint in
+        '''
+        # Load checkpoint
+        checkpoint = torch.load(checkpoint_path, map_location='cpu') 
+        # Load parameters
+        self.model.load_state_dict(checkpoint['model_state_dict'])
+        # Load optimizer
+        self.optimizer.load_state_dict(checkpoint['optimizer_state_dict'])
+
 
     def autoregressive_pred(self, input_seq: torch.Tensor, n_steps: int=10) -> np.ndarray:
         """
         input_seq: Tensor of shape (1, seq_length, n_feats)
         returns:  (n_steps, n_feats) unscaled predictions
         """
+        print("Loading checkpoint...")
+        self.load_checkpoint()
+
+        # Set to eval mode
         self.model.eval()
         # ensure batch dim
         if input_seq.dim() == 2:

@@ -1,12 +1,8 @@
 import streamlit as st
 import pandas as pd
 from functions import *
-import matplotlib.pyplot as plt
 import config
-import modules
-import models.RuneLSTM
-import models.RuneTrainer
-import modules.rune_plots
+
 
 st.set_page_config(layout="wide")
 def start_server():
@@ -88,6 +84,33 @@ def start_server():
         with st.spinner("Caching time-series data..."):
             time_series_cache()
 
+    st.sidebar.markdown("----")
+    st.sidebar.header("Profit Calc")
+    buy_value = st.sidebar.text_input(label="Buy Value", value = "0")
+    sell_value = st.sidebar.text_input(label="Sell Value", value = "0")
+    vol = st.sidebar.text_input(label="Volume", value="1")
+    if st.sidebar.button("Get Profit"):
+        # Check if k is used
+        if "k" in buy_value:
+            buy_value = buy_value.replace('k', '')
+        
+        if "k" in sell_value:
+            sell_value = sell_value.replace('k', '')
+
+        buy_value = float(buy_value)
+        sell_value = float(sell_value)
+        vol = int(vol)
+        margin, profit = get_profit(buy_value=buy_value, sell_value=sell_value, vol=vol)
+
+        # Format display values in terms of k if they are above 1k
+
+        if margin >= 1000:
+            margin = f"{round(margin/1000,0)}k"
+        if profit >= 1000:
+            profit = f"{round(profit/1000,0)}k"
+
+        st.sidebar.text_input(label="Margin Value", value=str(margin))
+        st.sidebar.text_input(label="Profit Value", value=str(profit))
     
     #-----------TABS----------------
     tab1, tab2, tab3 = st.tabs(["📊 General Report", "📊 Specific Report", "📈 Single-Item Report"])

@@ -149,7 +149,7 @@ def load_dip_report() -> pd.DataFrame:
 
     # Since will be selling at avglow, need a min tax 
     TAX_LIMIT = 5000000
-    TAX_RATE = 0.01 # 1% tax for items above 100
+    TAX_RATE = 0.02 # 12% tax for items above 100
     MIN_TAX = 1
     # Tax rounds down to nearest int.
     report_df['low_tax'] = round((report_df["avgLowPrice"] * TAX_RATE).clip(upper=TAX_LIMIT), 0)
@@ -228,6 +228,18 @@ def load_high_alch_report() -> pd.DataFrame:
     report_df = report_df.sort_values(by=["potential_profit"], ascending=[False])
 
     return report_df
+
+def load_herb_report() -> pd.DataFrame:
+     '''
+     Report that calculates the profit of potions made
+     '''
+     pass
+
+def load_waston_report() -> pd.DataFrame:
+     '''
+     Report that calculates profit from converting master scroll books to Waston teleport scrolls
+     '''
+     pass
 def load_single_item_report(item_name:str, report_type:str) -> pd.DataFrame:
     '''
     Report to generarte single item time-series data
@@ -259,6 +271,13 @@ def load_single_item_report(item_name:str, report_type:str) -> pd.DataFrame:
 
 
 def model_single_item_report(item_report_df:pd.DataFrame, item_report_type:str):
+                '''
+                Report uses a LSTM to model price predictions for a given item
+                5m, 1h, and 24h time spans can be used. The endpoints here are [['5m/', 300, 2], ['1h/', 3600, 30], ['24h/', 86400, 365]].
+                So the 5m time spans 2 days, the 1h 30 days, and the 24h 365 days. 
+                For short term it is best to use the 5m spam.
+                Autogression is used, so the points may be off, but the general trend may be accurate.
+                '''
                 # Choose input features
                 input_features = ['avgHighPrice', 'avgLowPrice', 'percent_sold']
                 # Choose target features
@@ -323,7 +342,7 @@ def model_single_item_report(item_report_df:pd.DataFrame, item_report_type:str):
                 single_item_pred_df['current_low'] = item_report_df[item_report_df['timestamp'] == item_report_df['timestamp'].max()]['avgLowPrice'].iloc[0]
                 # Since will be selling at avglow, need a min tax 
                 TAX_LIMIT = 5000000
-                TAX_RATE = 0.01 # 1% tax for items above 100
+                TAX_RATE = 0.02 # 2% tax for items above 100
                 MIN_TAX = 1
                 # Tax rounds down to nearest int.
                 single_item_pred_df['tax'] = round((single_item_pred_df["avgHighPrice"] * TAX_RATE).clip(upper=TAX_LIMIT), 0)
@@ -365,3 +384,15 @@ def time_series_cache():
 
     latest_csv.to_csv(output_file, index=False)
 
+
+def get_profit(buy_value: float, sell_value:float, vol:int = 1):
+     
+     
+     tax = min((sell_value *0.02), 5000000)
+
+     margin = sell_value - tax - buy_value
+
+     profit = margin * vol
+     
+     return margin, profit
+        
