@@ -1,6 +1,7 @@
 import streamlit as st
 import pandas as pd
 from functions import *
+from datetime import datetime
 import config
 
 
@@ -80,9 +81,22 @@ def start_server():
 
     #-----------OTHER OPTIONS----------------
     st.sidebar.markdown("---")
+
+    # Initialize the timestamp in session state if it doesn't exist
+    if "last_update" not in st.session_state:
+        st.session_state.last_update = "Never"
+
+    # Display the last run time above the button
+    st.sidebar.write(f"Last updated: {st.session_state.last_update}")
     if st.sidebar.button("Update Data Cache"):
         with st.spinner("Caching time-series data..."):
             time_series_cache()
+            # Update the timestamp after the function finishes
+            now = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+            st.session_state.last_update = now
+            
+            # Rerun to refresh the "Last updated" text immediately
+            st.rerun()
 
     st.sidebar.markdown("----")
     st.sidebar.header("Profit Calc")

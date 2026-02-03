@@ -373,7 +373,21 @@ def time_series_cache():
 
         # Wait a moment between each api call
         time.sleep(1)
+    
+    # Reload the item mapping
+    outputFile = f"{config.DATA_DIR}item_mapping.csv"
 
+    url = f"https://prices.runescape.wiki/api/v1/osrs/mapping"
+
+    r = utils.get_API_request(url=url, headers=config.HEADERS)
+
+    itemMapCSV = utils.extract_item_mapping(r=r)
+
+    itemMapCSV.to_csv(outputFile, index=False)
+
+    # Wait a moment between each api call
+    time.sleep(1)
+    
     # Update latest
     output_file = f"{config.DATA_DIR}time_series_latest.csv"
     url = 'https://prices.runescape.wiki/api/v1/osrs/latest'
