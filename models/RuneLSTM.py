@@ -5,9 +5,9 @@ from torch.nn import functional as F
 
 '''Construct a model with a RNN layer + a MLP to process the regression'''
 class RuneLSTM(nn.Module):
-    def __init__(self, num_inputs, hidden_size, num_layers, output_size, device:str="cuda:0"):
+    def __init__(self, num_inputs, hidden_size, num_layers, output_size):
         super(RuneLSTM, self).__init__()
-        self.device = device
+        self.device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
         self.hidden_size = hidden_size
         self.num_layers = num_layers
         

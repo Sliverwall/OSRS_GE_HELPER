@@ -15,11 +15,10 @@ class RuneTrainer():
                  seq_length:int=10,
                  loss_fn=nn.MSELoss(),
                  lr:float=1e-3,
-                 time_feature:str= "timestamp",
-                 device:str="cuda:0"):
+                 time_feature:str= "timestamp"):
         
         # Model config
-        self.device = device
+        self.device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
         self.model = model.to(self.device)
 
         # Data config
